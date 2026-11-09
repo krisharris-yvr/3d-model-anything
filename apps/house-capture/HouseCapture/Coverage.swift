@@ -54,13 +54,22 @@ struct Coverage {
       }
       return Wall(a: a, b: b, segments: segments, lowConfidence: wall.confidence != .high)
     }
-    objects = room.objects.map { obj in
+    // Each SIMD chain is its own typed binding. One closure containing the
+    // half-extents and the four-corner array exceeds the type checker's work limit.
+    objects = room.objects.map { obj -> Box in
       let t = obj.transform
-      let c = simd_make_float3(t.columns.3)
-      let x = simd_make_float3(t.columns.0) * obj.dimensions.x / 2
-      let z = simd_make_float3(t.columns.2) * obj.dimensions.z / 2
-      let corners = [c - x - z, c + x - z, c + x + z, c - x + z].map { SIMD2($0.x, $0.z) }
-      return Box(corners: corners, covered: photos.contains { $0.sees(c, surfaceNormal: nil) }, label: "\(obj.category)")
+      let c: SIMD3<Float> = simd_make_float3(t.columns.3)
+      let xAxis: SIMD3<Float> = simd_make_float3(t.columns.0)
+      let zAxis: SIMD3<Float> = simd_make_float3(t.columns.2)
+      let x: SIMD3<Float> = xAxis * obj.dimensions.x / 2
+      let z: SIMD3<Float> = zAxis * obj.dimensions.z / 2
+      let cornerA: SIMD3<Float> = (c - x) - z
+      let cornerB: SIMD3<Float> = (c + x) - z
+      let cornerC: SIMD3<Float> = (c + x) + z
+      let cornerD: SIMD3<Float> = (c - x) + z
+      let corners = [cornerA, cornerB, cornerC, cornerD].map { SIMD2<Float>($0.x, $0.z) }
+      let covered = photos.contains { $0.sees(c, surfaceNormal: nil) }
+      return Box(corners: corners, covered: covered, label: "\(obj.category)")
     }
     gaps = (room.doors + room.openings).map { Gap(a: Self.endpoints($0).0, b: Self.endpoints($0).1, isWindow: false) }
       + room.windows.map { Gap(a: Self.endpoints($0).0, b: Self.endpoints($0).1, isWindow: true) }
